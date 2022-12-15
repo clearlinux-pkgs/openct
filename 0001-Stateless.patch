@@ -1,0 +1,71 @@
+From 70a58688f202d24ee7ba651618314f89718f79b9 Mon Sep 17 00:00:00 2001
+From: "Brett T. Warden" <brett.t.warden@intel.com>
+Date: Thu, 15 Dec 2022 09:01:49 -0800
+Subject: [PATCH] Stateless
+
+---
+ etc/Makefile.am            |  4 +++-
+ src/ifd/conf.c             | 17 ++++++++++++++---
+ src/tools/openct-tool.1.in |  2 +-
+ 3 files changed, 18 insertions(+), 5 deletions(-)
+
+diff --git a/etc/Makefile.am b/etc/Makefile.am
+index ff66d4e686b9..64b01067746b 100644
+--- a/etc/Makefile.am
++++ b/etc/Makefile.am
+@@ -32,7 +32,9 @@ endif
+ 
+ sysconf_DATA=#required in order to create dir
+ install-exec-hook:	install-sysconfDATA openct.conf
+-	if [ -f "$(DESTDIR)$(sysconfdir)/openct.conf" ]; then \
++	if ! [ -d "$(DESTDIR)$(sysconfdir)" ]; then \
++		$(INSTALL_DATA) -D openct.conf "$(DESTDIR)/usr/lib/openct/openct.conf"; \
++	elif [ -f "$(DESTDIR)$(sysconfdir)/openct.conf" ]; then \
+ 		$(INSTALL_DATA) openct.conf "$(DESTDIR)$(sysconfdir)/openct.conf.new"; \
+ 	else \
+ 		$(INSTALL_DATA) openct.conf "$(DESTDIR)$(sysconfdir)/openct.conf"; \
+diff --git a/src/ifd/conf.c b/src/ifd/conf.c
+index 431099e25957..824dd58738a1 100644
+--- a/src/ifd/conf.c
++++ b/src/ifd/conf.c
+@@ -65,10 +65,21 @@ int ifd_config_parse(const char *filename)
+ 		config_filename = OPENCT_CONF_PATH;
+ 
+ 	/* If config file doesn't exist, quietly sneak out of here */
+-	if ((config_fd = open(config_filename, O_RDONLY)) < 0) {
++	while ((config_fd = open(config_filename, O_RDONLY)) < 0) {
+ 		if (errno == ENOENT)
+-			return 0;
+-		ct_error("Unable to open %s: %m", filename);
++		{
++			/*
++			 * If we were trying the default config in /etc, try
++			 * once more with the distro-provided version
++			 */
++			if (OPENCT_CONF_PATH == config_filename) {
++				config_filename = "/usr/lib/openct/openct.conf";
++				continue;
++			}
++			else
++				return 0;
++		}
++		ct_error("Unable to open %s: %m", config_filename);
+ 		return -1;
+ 	}
+ 
+diff --git a/src/tools/openct-tool.1.in b/src/tools/openct-tool.1.in
+index dc3a1285fd78..1f8712025305 100644
+--- a/src/tools/openct-tool.1.in
++++ b/src/tools/openct-tool.1.in
+@@ -9,7 +9,7 @@ openct\-tool [options] command ...
+ enable debugging; repeat to increase verbosity
+ .TP
+ \fB\-f\fR \fIconfigfile\fR
+-specify config file (default @openct_conf_path@)
++specify config file (default /usr/lib/openct/openct.conf, or overridden in @sysconfdir@/openct.conf)
+ .TP
+ \fB\-r\fR \fIreader\fR
+ specify index of reader to use
+-- 
+2.39.0
+
